@@ -1108,11 +1108,29 @@ void SqrtKeypointVioEstimator<Scalar_>::optimize() {
         Timer t;
 
         // linearize residuals
-        bool numerically_valid;
+        bool numerically_valid = false;
         error_total = lqr->linearizeProblem(&numerically_valid);
-        BASALT_ASSERT_STREAM(
-            numerically_valid,
-            "did not expect numerical failure during linearization");
+        if (!numerically_valid) {
+          // DOR crash guard (dor-patches): upstream asserts here, which calls
+          // std::abort() and kills the whole single-process dor-vio binary. A
+          // numerically-invalid linearization shows up on aggressive flights
+          // with an off-nominal cam-IMU time offset (empirically td=0 and
+          // -30 ms on flight_20260621_134113). The FC-facing process must NOT
+          // die for this: terminate this optimization early and keep the last
+          // good state. The driver/fusion quality gate downstream detects the
+          // stale/low-quality output and falls back to EKF3. Logged once.
+          static bool dor_logged_numfail = false;
+          if (!dor_logged_numfail) {
+            dor_logged_numfail = true;
+            std::cerr << "[basalt][dor-guard] numerical failure during "
+                         "linearization — terminating optimization, keeping "
+                         "last state (further occurrences silenced)"
+                      << std::endl;
+          }
+          terminated = true;
+          message = "numerical failure during linearization (dor guard)";
+          break;
+        }
         stats.add("linearizeProblem", t.reset()).format("ms");
 
         //        // compute pose jacobian norm squared for Jacobian scaling

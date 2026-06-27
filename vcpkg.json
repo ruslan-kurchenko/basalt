@@ -38,13 +38,6 @@
         "png"
       ]
     },
-    {
-      "name": "realsense2",
-      "features": [
-        "rs-usb-backend",
-        "tm2"
-      ]
-    },
     "tbb",
     "basalt-headers",
     "opengv",

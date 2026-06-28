@@ -71,10 +71,23 @@ class VioEstimatorBase {
     imu_data_queue.set_capacity(300);
     last_processed_t_ns = 0;
     finished = false;
+    vio_error_ = false;
   }
 
   std::atomic<int64_t> last_processed_t_ns;
   std::atomic<bool> finished;
+
+  // DOR T2b crash-guard: set true by a derived estimator's processing thread
+  // when it catches a BASALT_ASSERT-throw (basalt::AssertionError) or any other
+  // std::exception, so the loop aborts cleanly instead of std::terminate-ing the
+  // process. Polled by the DOR Basalt driver via hasError() to trigger a reset.
+  std::atomic<bool> vio_error_;
+
+  /// True once the processing thread caught an exception and aborted the
+  /// estimation loop. Thread-safe (atomic load). Always false in the happy
+  /// path. The DOR Basalt driver polls this to trigger a clean VIO reset +
+  /// re-bootstrap rather than letting the failure abort the flight binary (T2b).
+  bool hasError() const { return vio_error_.load(); }
 
   tbb::concurrent_bounded_queue<OpticalFlowResult::Ptr> vision_data_queue;
   tbb::concurrent_bounded_queue<ImuData<double>::Ptr> imu_data_queue;

@@ -154,6 +154,7 @@ void SqrtKeypointVioEstimator<Scalar_>::initialize(const Eigen::Vector3d& bg_,
   Vec3 ba_init = ba_.cast<Scalar>();
 
   auto proc_func = [&, bg = bg_init, ba = ba_init] {
+    try {
     OpticalFlowResult::Ptr prev_frame, curr_frame;
     typename IntegratedImuMeasurement<Scalar>::Ptr meas;
 
@@ -258,6 +259,20 @@ void SqrtKeypointVioEstimator<Scalar_>::initialize(const Eigen::Vector3d& bg_,
 
       measure(curr_frame, meas);
       prev_frame = curr_frame;
+    }
+    } catch (const std::exception& e) {
+      // DOR T2b crash-guard: a numerical failure inside measure()/optimize()
+      // (e.g. a singular Schur complement -> NaN -> the `numerically_valid`
+      // assertion) now throws basalt::AssertionError via the shadowed
+      // BASALT_ASSERT, instead of std::abort()-ing the flight binary. An
+      // uncaught throw in this worker std::thread would std::terminate the
+      // process, so it MUST be caught inside the thread body. Flag the error
+      // for the driver, then fall through to the normal shutdown epilogue
+      // (sentinel nullptrs + finished) so the consumer drains cleanly and the
+      // DOR Basalt driver can reset() + re-bootstrap rather than crash.
+      vio_error_ = true;
+      std::cerr << "***** SqrtKeypointVioEstimator processing thread aborting: "
+                << e.what() << std::endl;
     }
 
     if (out_vis_queue) out_vis_queue->push(nullptr);
